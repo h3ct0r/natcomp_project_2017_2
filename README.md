@@ -1,2 +1,2 @@
-# natcomp_project_2017_2
-natcomp_project_2017_2
+# ant_colony_optimization_assigment_nat_comp_2017
+Assigment for Natural Computing class. A practial work with Ant Colony Optimization (ACO)
