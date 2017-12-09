@@ -15,7 +15,8 @@ class ColonySystem(object):
         self.ant_number = self.cfg["ant_number"]
         self.alpha = self.cfg["alpha"]
         self.beta = self.cfg["beta"]
-        self.pheromone_evaporation = self.cfg["pheromone_evaporation"]
+        self.pheromone_evaporation_red = self.cfg["pheromone_evaporation_red"]
+        self.pheromone_evaporation_blue = self.cfg["pheromone_evaporation_blue"]
         self.pheromone_t0 = self.cfg["pheromone_t0"]
 
         self.graph = graph
@@ -26,6 +27,12 @@ class ColonySystem(object):
 
         self.ants = []
         self.init_ants()
+
+        self.persons_rescued = 0
+        self.persons_to_rescue = 0
+        for n, d in self.graph.nodes_iter(data=True):
+            if d["node_type"] == 2:
+                self.persons_to_rescue += 1
 
     def init_ants(self):
         print '[INFO]', 'Creating {} ants'.format(self.ant_number)
@@ -69,11 +76,11 @@ class ColonySystem(object):
             if n in self.pheromone_dict_blue:
                 blue_p_value = self.pheromone_dict_blue[n]
 
-            d["p_red"] = ((1 - self.pheromone_evaporation) * d["p_red"]) + red_p_value
+            d["p_red"] = ((1 - self.pheromone_evaporation_red) * d["p_red"]) + red_p_value
             if d["p_red"] < 0.0:
                 d["p_red"] = 0.0
 
-            d["p_blue"] = ((1 - self.pheromone_evaporation) * d["p_blue"]) + blue_p_value
+            d["p_blue"] = ((1 - self.pheromone_evaporation_blue) * d["p_blue"]) + blue_p_value
             if d["p_blue"] < 0.0:
                 d["p_blue"] = 0.0
 

@@ -27,6 +27,10 @@ class Ant(Thread):
         self.state = 'explore'
         self.is_transporting_person = False
         self.location_person_node = -1
+        self.rescued = 0
+
+    def get_rescued(self):
+        return self.rescued
 
     def get_pos(self):
         return self.graph.node[self.node_index]["pos"]
@@ -82,32 +86,7 @@ class Ant(Thread):
         if self.state is "explore":
 
             prob_neighbours = self.calculate_prob(nearby_nodes)
-
-            probs = []
-            for n in nearby_nodes:
-                p_red = self.graph.node[n]["p_red"]
-                p_blue = self.graph.node[n]["p_blue"]
-                a = p_red ** self.alpha
-                b = p_blue ** self.beta
-                #print "ab:", ab, "p_red", p_red
-                probs.append()
-
-            probs_sum = sum(probs)
-            probs = [(e / float(probs_sum)) for e in probs]
-
-            delta_p = 2
-            inverse_prob = [1/float(e ** delta_p) for e in probs]
-            inverse_prob = np.asarray(inverse_prob) / np.trapz(inverse_prob)
-
-            choice_i = Ant._weighted_random_choice(inverse_prob)
-
-            # print probs
-            # for i in xrange(len(nearby_nodes)):
-            #     print "choise:{}, node:{}, pheromone_red:{}, prob:{}, prob2:{}".format(choice_i,
-            #                                                                        nearby_nodes[i],
-            #                                                                        self.graph.node[i]["p_red"],
-            #                                                                        probs[i],
-            #                                                                        inverse_prob[i])
+            choice_i = Ant._weighted_random_choice(prob_neighbours)
 
             # leave pheromone on the previous node
             next_node_id = nearby_nodes[choice_i]
@@ -121,6 +100,7 @@ class Ant(Thread):
                 self.add_pheromone(self.node_index, 1, self.pheromone_dict_blue)
             else:
                 self.is_transporting_person = False
+                self.rescued += 1
                 self.state = "return_to_location"
 
         if self.state is "return_to_location":
@@ -144,41 +124,41 @@ class Ant(Thread):
             a_l.append(a)
             b_l.append(b)
 
-        a_l2 = [e / float(sum(a_l)) for e in a_l]
-        delta_p = 5
-
+        delta_p = 10
         inverse_prob = []
-        for e in a_l2:
+        for e in a_l:
             r = 0.0
             if e > 0.0:
                 r = 1 / float(e ** delta_p)
             inverse_prob.append(r)
 
-        inverse_prob = list(np.asarray(inverse_prob) / np.trapz(inverse_prob))
+        inverse_prob = [inverse_prob[i] * b_l[i] for i in xrange(len(inverse_prob))]
+        inverse_prob = [inverse_prob[i] / float(sum(inverse_prob)) for i in xrange(len(inverse_prob))]
 
-        b_l2 = []
-        for e in b_l:
-            r = 0.0
-            if e > 0.0:
-                r = e / float(sum(b_l))
-            b_l2.append(r)
+        #inverse_prob = list(np.asarray(inverse_prob) / np.trapz(inverse_prob))
 
-        ab = []
-        for i in xrange(len(b_l2)):
-            a = inverse_prob[i]
-            b = b_l2[i]
+        # b_l2 = []
+        # for e in b_l:
+        #     r = 0.0
+        #     if e > 0.0:
+        #         r = e / float(sum(b_l))
+        #     b_l2.append(r)
+        #
+        # ab = []
+        # for i in xrange(len(b_l2)):
+        #     a = inverse_prob[i]
+        #     b = b_l2[i]
+        #
+        #     #print a, b
+        #     aba = (a / float(a + b)) * a + (b / float(b + a)) * b
+        #     ab.append(aba)
+        # ab = [e / float(sum(ab)) for e in ab]
 
-            print a, b
-            aba = (a / float(a + b)) * a + (b / float(b + a)) * b
-            ab.append(aba)
-        ab = [e / float(sum(ab)) for e in ab]
+        # print "inverse:\t", inverse_prob, len(inverse_prob), sum(inverse_prob)
+        # print "b:\t\t\t", b_l2, len(b_l2), sum(b_l2)
+        # print "ab:\t\t\t", ab, len(ab), sum(ab)
 
-        # print "a:\t\t\t", a_l2, len(a_l2), sum(a_l2)
-        print "inverse:\t", inverse_prob, len(inverse_prob), sum(inverse_prob)
-        print "b:\t\t\t", b_l2, len(b_l2), sum(b_l2)
-        print "ab:\t\t\t", ab, len(ab), sum(ab)
-
-        return ab
+        return inverse_prob
 
 
 
