@@ -1,100 +1,184 @@
 import random
 import time
+import threading
 from threading import Thread
 import math
 import copy
+import numpy as np
+import networkx as nx
 
 
 class Ant(Thread):
-    def __init__(self, ant_id, alpha, beta, grid, grid_pheromone):
-        #super(Ant, self).__init__()
-        Thread.__init__(self)
+    def __init__(self, ant_id, alpha, beta, graph, pheromone_dict_red, pheromone_dict_blue, node_index=0):
+        super(Ant, self).__init__()
 
         self.ant_id = ant_id
         self.alpha = alpha
         self.beta = beta
 
-        self.grid = grid
-        self.grid_pheromone = grid_pheromone
+        self.graph = graph
+        self.pheromone_dict_red = pheromone_dict_red
+        self.pheromone_dict_blue = pheromone_dict_blue
+
+        self.home_node = node_index
+        self.node_index = node_index
+        self.tabu_set = set([self.node_index])
+
+        self.state = 'explore'
+        self.is_transporting_person = False
+        self.location_person_node = -1
+
+    def get_pos(self):
+        return self.graph.node[self.node_index]["pos"]
 
     def run(self):
         self.next_step()
 
+    def shortest_path(self, src, target, sub_nodes=None):
+        sub_g = self.graph
+        if sub_nodes is not None:
+            sub_g = self.graph.subgraph(sub_nodes)
+        return nx.shortest_path(sub_g, source=src, target=target)
+
+    @staticmethod
+    def _weighted_random_choice(prob_l):
+        max_f = sum(fit for fit in prob_l)
+        pick = random.uniform(0, max_f)
+        current = 0
+        for i in xrange(len(prob_l)):
+            fit = prob_l[i]
+            current += fit
+            if current > pick:
+                return i
+
+    def add_pheromone(self, n_id, p_level, p_map):
+        if n_id in p_map:
+            p_map[n_id] = (p_map[n_id] + p_level) / float(2)
+        else:
+            p_map[n_id] = p_level
+
     def next_step(self):
-        p_medians = []
+        # get node neighbours that are trasversable
+        edges = [e[1] for e in self.graph.edges(self.node_index)]
+        nearby_nodes = []
+        for e in edges:
+            n_type = self.graph.node[e]["node_type"]
+            if n_type in [0, 2] and e != self.node_index:
+                nearby_nodes.append(e)
 
-        node_fitness = []
-        for n in self.grid:
-            node_i = n.node_id
-            p_v1 = (self.pheromone_map[node_i] ** self.alpha) * (self.density_map[node_i] ** self.beta)
-            p_v2 = sum([((self.pheromone_map[i] ** self.alpha) * (self.density_map[i] ** self.beta)) for i in xrange(len(self.pheromone_map))])
-            p_k_i = float(p_v1) / float(p_v2)
-            node_fitness.append(p_k_i)
+        non_visited = [e for e in nearby_nodes if e not in self.tabu_set]
+        visited = [e for e in nearby_nodes if e in self.tabu_set]
 
-        #t_start = time.time()
-        count = 0
-        while len(p_medians) < self.p_count:
-            # choose random between (0, 1] and test with eq 10
-            # to prevent from looping forever
-            if count <= self.p_count * 1000:
-                chosen_i = self._weighted_random_choice(node_fitness)
-            else:
-                print "[DEBUG]", "Ant #{} random choose".format(self.ant_id)
-                chosen_i = random.randint(0, len(node_fitness) - 1)
-
-            if chosen_i not in p_medians:
-                p_medians.append(chosen_i)
-
-            count += 1
-
-
-        #t_end = time.time()
-        #print '[TIME 1]', 'elapsed time:{}'.format(t_end - t_start)
-
-        return self.calculate_result(p_medians)
-
-    def calculate_result(self, p_medians):
-        #print '[DEBUG]', 'Ant {} choosing p-medians: {}'.format(self.ant_id, p_medians)
-        # t_start = time.time()
-
-        allocations = dict()
-        allocated_nodes = []
-        allocation_sum = 0
-
-        medians_nodes = [self.grid[i] for i in p_medians]
-        medians_nodes = copy.deepcopy(medians_nodes)
-
-        for i in p_medians:
-            allocations[i] = []
-
-        for n in self.grid:
-            if n.node_id in p_medians:
-                continue
-
-            ordered_medians = list(sorted(medians_nodes, key=lambda (a): math.sqrt((a.x - n.x) ** 2 + (a.y - n.y) ** 2)))
-            #print 'node:', n.node_id, 'ordered medians:', ordered_medians
-            for med in ordered_medians:
-                #print '[DEBUG]', 'search:', n.node_id, 'to', med.node_id, math.sqrt(
-                #    ((med.x - n.x) ** 2) + ((med.y - n.x) ** 2))
-                if n.d <= med.c:
-                    med.c -= n.d
-                    allocations[med.node_id].append(n.node_id)
-                    allocated_nodes.append(n.node_id)
-                    allocation_sum += math.sqrt((n.x - med.x) ** 2 + (n.y - med.y) ** 2)
+        if not self.is_transporting_person:
+            for e in nearby_nodes:
+                if self.graph.node[e]["node_type"] == 2:
+                    self.state = "transport_person"
+                    self.graph.node[e]["node_type"] = 0
+                    self.location_person_node = e
+                    self.is_transporting_person = True
+                    self.tabu_set.add(e)
                     break
 
-        #print 'allocated_nodes:{}'.format(allocated_nodes)
-        #print '[DEBUG]', 'Ant {} allocations {}'.format(self.ant_id, allocations)
-        self.previous_result = allocations
+        if self.state is "explore":
 
-        if len(allocated_nodes) != len(self.grid) - len(p_medians):
-            self.previous_result_status = False
-        else:
-            self.previous_result_status = True
+            prob_neighbours = self.calculate_prob(nearby_nodes)
 
-        self.previous_result_sum = allocation_sum
+            probs = []
+            for n in nearby_nodes:
+                p_red = self.graph.node[n]["p_red"]
+                p_blue = self.graph.node[n]["p_blue"]
+                a = p_red ** self.alpha
+                b = p_blue ** self.beta
+                #print "ab:", ab, "p_red", p_red
+                probs.append()
 
-        #print '[DEBUG]', 'Ant {} result is valid? {} {}/{}'.format(self.ant_id, self.previous_result_status, len(allocated_nodes), len(self.data) - len(p_medians))
-        return self.previous_result_status
+            probs_sum = sum(probs)
+            probs = [(e / float(probs_sum)) for e in probs]
+
+            delta_p = 2
+            inverse_prob = [1/float(e ** delta_p) for e in probs]
+            inverse_prob = np.asarray(inverse_prob) / np.trapz(inverse_prob)
+
+            choice_i = Ant._weighted_random_choice(inverse_prob)
+
+            # print probs
+            # for i in xrange(len(nearby_nodes)):
+            #     print "choise:{}, node:{}, pheromone_red:{}, prob:{}, prob2:{}".format(choice_i,
+            #                                                                        nearby_nodes[i],
+            #                                                                        self.graph.node[i]["p_red"],
+            #                                                                        probs[i],
+            #                                                                        inverse_prob[i])
+
+            # leave pheromone on the previous node
+            next_node_id = nearby_nodes[choice_i]
+            self.node_index = next_node_id
+            self.add_pheromone(self.node_index, 1, self.pheromone_dict_red)
+
+        if self.state is "transport_person":
+            path = self.shortest_path(self.node_index, self.home_node, sub_nodes=self.tabu_set)
+            if len(path) > 1:
+                self.node_index = path[1]
+                self.add_pheromone(self.node_index, 1, self.pheromone_dict_blue)
+            else:
+                self.is_transporting_person = False
+                self.state = "return_to_location"
+
+        if self.state is "return_to_location":
+            path = self.shortest_path(self.node_index, self.location_person_node, self.tabu_set)
+            if len(path) > 1:
+                self.node_index = path[1]
+                self.add_pheromone(self.node_index, 1, self.pheromone_dict_blue)
+            else:
+                self.state = "explore"
+
+        self.tabu_set.add(self.node_index)
+
+    def calculate_prob(self, nearby_nodes):
+        a_l = []
+        b_l = []
+        for n in nearby_nodes:
+            p_red = self.graph.node[n]["p_red"]
+            p_blue = self.graph.node[n]["p_blue"]
+            a = p_red ** self.alpha
+            b = p_blue ** self.beta
+            a_l.append(a)
+            b_l.append(b)
+
+        a_l2 = [e / float(sum(a_l)) for e in a_l]
+        delta_p = 5
+
+        inverse_prob = []
+        for e in a_l2:
+            r = 0.0
+            if e > 0.0:
+                r = 1 / float(e ** delta_p)
+            inverse_prob.append(r)
+
+        inverse_prob = list(np.asarray(inverse_prob) / np.trapz(inverse_prob))
+
+        b_l2 = []
+        for e in b_l:
+            r = 0.0
+            if e > 0.0:
+                r = e / float(sum(b_l))
+            b_l2.append(r)
+
+        ab = []
+        for i in xrange(len(b_l2)):
+            a = inverse_prob[i]
+            b = b_l2[i]
+
+            print a, b
+            aba = (a / float(a + b)) * a + (b / float(b + a)) * b
+            ab.append(aba)
+        ab = [e / float(sum(ab)) for e in ab]
+
+        # print "a:\t\t\t", a_l2, len(a_l2), sum(a_l2)
+        print "inverse:\t", inverse_prob, len(inverse_prob), sum(inverse_prob)
+        print "b:\t\t\t", b_l2, len(b_l2), sum(b_l2)
+        print "ab:\t\t\t", ab, len(ab), sum(ab)
+
+        return ab
+
 
 

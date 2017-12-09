@@ -2,7 +2,9 @@ import pygame
 import random
 import json
 import os
+import math
 import networkx as nx
+import time
 
 from colony_system import ColonySystem
 
@@ -12,10 +14,10 @@ class GridSystem(object):
         self.cfg = cfg
         self.colors = {
             'black': (0, 0, 0),
-            'w': (254, 254, 254),
-            'g': (0, 255, 0),
-            'r': (255, 0, 0),
-            'b': (0, 0, 254),
+            'white': (254, 254, 254),
+            'green': (0, 255, 0),
+            'red': (255, 0, 0),
+            'blue': (0, 0, 254),
             'gray': (105, 105, 105)
         }
 
@@ -37,50 +39,51 @@ class GridSystem(object):
         self.window_height = self.row_number * self.square_size + ((self.window_margin * 2) + (self.window_margin * self.row_number))
 
         self.graph = self.gen_graph()
-        #self.generate_random_obstacles_and_persons()
 
         self.colony_s = ColonySystem(self.cfg, self.graph)
 
+        self.screen = None
+        self.screen_alpha_red = None
+        self.screen_alpha_blue = None
+
         self.anim_done = False
         self.init_pygame()
-        self.init_colony()
-
-    def init_colony(self):
-        pass
 
     def load_grid(self):
         with open(os.path.realpath(self.cfg["dataset"])) as data_file:
             self.grid = json.load(data_file)
 
-    def init_graph(self):
+    def gen_graph(self):
         graph = nx.Graph()
 
         # create nodes
         for i in xrange(self.col_number):
             for j in xrange(self.row_number):
-                cell_type = self.grid[i][j]
-                graph.add_node(GridSystem.gen_node_id(i, j), {
+                node_type = self.grid[i][j]
+                graph.add_node(GridSystem.gen_node_id(i, j, self.col_number), {
                     'pos': (i, j),
-                    'p_red': 0.0,
-                    'p_blue': 0.0,
-                    'node_type': cell_type
+                    'p_red': self.cfg["pheromone_t0"] if node_type in [0, 2] else 0.0,
+                    'p_blue': self.cfg["pheromone_t0"] if node_type in [0, 2] else 0.0,
+                    'node_type': node_type
                 })
 
         # add edges
         for i in xrange(self.col_number):
             for j in xrange(self.row_number):
-                neighbours = list(GridSystem.get_neighbours_of_edge(i, j, self.col_number, self.row_number))
-                c_node_id = GridSystem.gen_node_id(i, j)
+                neighbours = list(GridSystem.get_neighbours_of_edge(i,
+                                                                    j,
+                                                                    self.col_number,
+                                                                    self.row_number,
+                                                                    full_neighbours=True))
+                c_node_id = GridSystem.gen_node_id(i, j, self.col_number)
                 for n_id in neighbours:
                     graph.add_edge(c_node_id, n_id)
 
         return graph
 
     @staticmethod
-    def gen_node_id(i, j):
-        cell_id_str = str(i) + str(j)
-        cell_id = int(cell_id_str)
-        return cell_id
+    def gen_node_id(i, j, col_size):
+        return (i * col_size) + j
 
     @staticmethod
     def get_neighbours_of_edge(ax, ay, col_size, row_size, full_neighbours=False):
@@ -91,13 +94,13 @@ class GridSystem(object):
                     dx = ax + i
                     dy = ay + j
                     if 0 <= dx < col_size and 0 <= dy < row_size:
-                        yield GridSystem.gen_node_id(dx, dy)
+                        yield GridSystem.gen_node_id(dx, dy, col_size)
         else:
             for e in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                 dx = ax + e[0]
                 dy = ay + e[1]
                 if 0 <= dx < col_size and 0 <= dy < row_size:
-                    yield GridSystem.gen_node_id(dx, dy)
+                    yield GridSystem.gen_node_id(dx, dy, col_size)
 
     @staticmethod
     def gen_grid(row_n, col_n):
@@ -108,62 +111,122 @@ class GridSystem(object):
                 g[r].append(0)
         return g
 
-    def generate_random_obstacles_and_persons(self, obstacle=100, person=10):
-        for i in xrange(obstacle):
-            r = random.randint(0, self.row_number - 1)
-            c = random.randint(0, self.col_number - 1)
-            self.grid[r][c] = 1
-
-        #last_person = None
-        for i in xrange(person):
-            r = random.randint(0, self.row_number - 1)
-            c = random.randint(0, self.col_number - 1)
-            self.grid[r][c] = 2
-            #last_person = (r, c)
-
     def init_pygame(self):
         pygame.init()
         self.screen = pygame.display.set_mode((self.window_width, self.window_height))
-        self.screen_alpha = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA, 32)
+        self.screen_alpha_red = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA, 32)
+        self.screen_alpha_blue = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA, 32)
 
     def start(self):
         clock = pygame.time.Clock()
 
-        while not self.anim_done:
+        run_ants = True
 
-            self.colony_s.run()
+        # Draw the pheromones
+        max_r_pheromones = 0
+        max_b_pheromones = 0
+
+        while not self.anim_done:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.anim_done = True
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        run_ants = True
+                        pass
 
-            # Set the screen background
-            self.screen.fill(self.colors['black'])
-            #self.screen_alpha.fill((255, 0, 0, 128)) # 255 full # 0 none
+            if run_ants:
+                self.colony_s.run()
 
-            # Draw the grid
-            for row in range(self.row_number):
-                for column in range(self.col_number):
-                    color = self.colors['w']
-                    if self.grid[row][column] == 1:
+                # Set the screen background
+                self.screen.fill(self.colors['black'])
+                #self.screen_alpha.fill((255, 0, 0, 128)) # 255 full # 0 none
+
+                # Draw the grid
+                r_pheromones = []
+                b_pheromones = []
+
+                for n, d in self.graph.nodes_iter(data=True):
+                    x, y = d["pos"]
+                    r_pheromones.append(d["p_red"])
+                    b_pheromones.append(d["p_blue"])
+
+                    if d["node_type"] == 1:
                         color = self.colors['black']
-                    elif self.grid[row][column] == 2:
-                        color = self.colors['b']
+                    elif d["node_type"] == 2:
+                        color = self.colors['blue']
+                    else:
+                        color = self.colors['white']
 
-                    pygame.draw.rect(self.screen_alpha,
+                    pygame.draw.rect(self.screen,
                                      color,
-                                     [(self.window_margin + self.square_size) * column + self.window_margin,
-                                      (self.window_margin + self.square_size) * row + self.window_margin,
+                                     [(self.window_margin + self.square_size) * y + self.window_margin,
+                                      (self.window_margin + self.square_size) * x + self.window_margin,
                                       self.square_size,
                                       self.square_size])
 
-            # Limit to 60 frames per second
-            clock.tick(60)
+                # Draw the ants
+                for ant in self.colony_s.get_ants():
+                    x, y = ant.get_pos()
+                    radius = int(math.floor(self.square_size / float(2)))
 
-            self.screen.blit(self.screen_alpha, (0, 0))
+                    # square top left pos + radius to get the circle exactly at the center of the square
+                    circle_pos = [((self.window_margin + self.square_size) * y + self.window_margin) + radius,
+                                  ((self.window_margin + self.square_size) * x + self.window_margin) + radius]
 
-            # Go ahead and update the screen with what we've drawn.
-            pygame.display.flip()
+                    pygame.draw.circle(self.screen, self.colors['green'], circle_pos, radius)
+
+                    if ant.is_transporting_person:
+                        pygame.draw.circle(self.screen, self.colors['blue'], circle_pos, int(radius/float(2)) + 1)
+
+                    pass
+
+                #print r_pheromones
+                if max(r_pheromones) > max_r_pheromones:
+                    max_r_pheromones = max(r_pheromones)
+
+                if max(b_pheromones) > max_b_pheromones:
+                    max_b_pheromones = max(b_pheromones)
+
+                for n, d in self.graph.nodes_iter(data=True):
+                    x, y = d["pos"]
+                    r_p_norm = (d["p_red"] / float(max_r_pheromones))
+                    r_p = int(r_p_norm * 255)
+                    rgb_a_red = (255, 0, 0, r_p)
+
+                    b_p_norm = (d["p_blue"] / float(max_b_pheromones))
+                    #print b_p_norm
+                    b_p = int(b_p_norm * 255)
+                    rgb_a_blue = (0, 0, 255, b_p)
+
+                    #print "real", d["p_red"], "r_p_norm", r_p_norm, "r_p", r_p, "max", max_r_pheromones, d["pos"]
+
+                    if d["node_type"] in [0, 2]:
+                        pygame.draw.rect(self.screen_alpha_red,
+                                         rgb_a_red,
+                                         [(self.window_margin + self.square_size) * y + self.window_margin,
+                                  (self.window_margin + self.square_size) * x + self.window_margin,
+                                  self.square_size,
+                                  self.square_size])
+
+                        pygame.draw.rect(self.screen_alpha_blue,
+                                         rgb_a_blue,
+                                         [(self.window_margin + self.square_size) * y + self.window_margin,
+                                          (self.window_margin + self.square_size) * x + self.window_margin,
+                                          self.square_size,
+                                          self.square_size])
+
+                # Limit to 60 frames per second
+                clock.tick(60)
+
+                self.screen.blit(self.screen_alpha_red, (0, 0))
+                self.screen.blit(self.screen_alpha_blue, (0, 0))
+
+                # Go ahead and update the screen with what we've drawn.
+                pygame.display.flip()
+                #time.sleep(0.1)
+                #run_ants = False
 
         # Be IDLE friendly. If you forget this line, the program will 'hang' on exit.
         pygame.quit()

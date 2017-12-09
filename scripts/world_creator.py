@@ -30,8 +30,8 @@ MARGIN = 1
 # Create a 2 dimensional array. A two dimensional
 # array is simply a list of lists.
 
-ROW_NUMBER = 100
-COLUMN_NUMBER = 100
+ROW_NUMBER = 50
+COLUMN_NUMBER = 50
 
 grid = []
 for row in range(ROW_NUMBER):
