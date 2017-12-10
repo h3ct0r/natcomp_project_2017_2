@@ -1,0 +1,14 @@
+{
+  "dataset":"dataset/maze2.json",
+  "ant_number": 30,
+  "alpha": 10,
+  "beta": 0.1,
+  "pheromone_evaporation_red": 0.00001,
+  "pheromone_evaporation_blue": 0.01,
+  "pheromone_t0": 0.1,
+  "seed": 1,
+  "repetitions": 30,
+  "row_number": 100,
+  "col_number": 100,
+  "start_point": [0, 0]
+}

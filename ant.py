@@ -29,6 +29,9 @@ class Ant(Thread):
         self.location_person_node = -1
         self.rescued = 0
 
+        self.drop_red = 1
+        self.drop_blue = 10
+
     def get_rescued(self):
         return self.rescued
 
@@ -46,13 +49,13 @@ class Ant(Thread):
 
     @staticmethod
     def _weighted_random_choice(prob_l):
-        max_f = sum(fit for fit in prob_l)
+        max_f = sum(prob_l)
         pick = random.uniform(0, max_f)
         current = 0
         for i in xrange(len(prob_l)):
             fit = prob_l[i]
             current += fit
-            if current > pick:
+            if current >= pick:
                 return i
 
     def add_pheromone(self, n_id, p_level, p_map):
@@ -81,6 +84,7 @@ class Ant(Thread):
                     self.location_person_node = e
                     self.is_transporting_person = True
                     self.tabu_set.add(e)
+                    self.add_pheromone(e, self.drop_blue, self.pheromone_dict_blue)
                     break
 
         if self.state is "explore":
@@ -91,13 +95,13 @@ class Ant(Thread):
             # leave pheromone on the previous node
             next_node_id = nearby_nodes[choice_i]
             self.node_index = next_node_id
-            self.add_pheromone(self.node_index, 1, self.pheromone_dict_red)
+            self.add_pheromone(self.node_index, self.drop_red, self.pheromone_dict_red)
 
         if self.state is "transport_person":
             path = self.shortest_path(self.node_index, self.home_node, sub_nodes=self.tabu_set)
             if len(path) > 1:
                 self.node_index = path[1]
-                self.add_pheromone(self.node_index, 1, self.pheromone_dict_blue)
+                self.add_pheromone(self.node_index, self.drop_blue, self.pheromone_dict_blue)
             else:
                 self.is_transporting_person = False
                 self.rescued += 1
@@ -107,56 +111,39 @@ class Ant(Thread):
             path = self.shortest_path(self.node_index, self.location_person_node, self.tabu_set)
             if len(path) > 1:
                 self.node_index = path[1]
-                self.add_pheromone(self.node_index, 1, self.pheromone_dict_blue)
+                self.add_pheromone(self.node_index, self.drop_blue, self.pheromone_dict_blue)
             else:
                 self.state = "explore"
 
         self.tabu_set.add(self.node_index)
 
-    def calculate_prob(self, nearby_nodes):
-        a_l = []
-        b_l = []
+    def calculate_prob(self, nearby_nodes, is_random=False):
+        if is_random:
+            return [1 for e in nearby_nodes]
+
+        inverse_prob = []
         for n in nearby_nodes:
             p_red = self.graph.node[n]["p_red"]
             p_blue = self.graph.node[n]["p_blue"]
-            a = p_red ** self.alpha
-            b = p_blue ** self.beta
-            a_l.append(a)
-            b_l.append(b)
 
-        delta_p = 10
-        inverse_prob = []
-        for e in a_l:
-            r = 0.0
-            if e > 0.0:
-                r = 1 / float(e ** delta_p)
+            e_red = float(p_red ** self.alpha)
+            if e_red < 0.000001:
+                e_red = 0.000001
+
+            r = (1 / e_red)
+            if r > 999:
+                r = 999
+
+            # if p_blue > 0.0:
+            #     r *= p_blue ** self.beta
+            # else:
+            #     r *= 0.001 ** self.beta
+            r *= p_blue ** self.beta
             inverse_prob.append(r)
 
-        inverse_prob = [inverse_prob[i] * b_l[i] for i in xrange(len(inverse_prob))]
+        #print inverse_prob
+
         inverse_prob = [inverse_prob[i] / float(sum(inverse_prob)) for i in xrange(len(inverse_prob))]
-
-        #inverse_prob = list(np.asarray(inverse_prob) / np.trapz(inverse_prob))
-
-        # b_l2 = []
-        # for e in b_l:
-        #     r = 0.0
-        #     if e > 0.0:
-        #         r = e / float(sum(b_l))
-        #     b_l2.append(r)
-        #
-        # ab = []
-        # for i in xrange(len(b_l2)):
-        #     a = inverse_prob[i]
-        #     b = b_l2[i]
-        #
-        #     #print a, b
-        #     aba = (a / float(a + b)) * a + (b / float(b + a)) * b
-        #     ab.append(aba)
-        # ab = [e / float(sum(ab)) for e in ab]
-
-        # print "inverse:\t", inverse_prob, len(inverse_prob), sum(inverse_prob)
-        # print "b:\t\t\t", b_l2, len(b_l2), sum(b_l2)
-        # print "ab:\t\t\t", ab, len(ab), sum(ab)
 
         return inverse_prob
 

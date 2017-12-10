@@ -1,7 +1,7 @@
 {
-  "dataset":"dataset/maze2.json",
+  "dataset":"dataset/no_barriers_small.json",
   "ant_number": 30,
-  "alpha": 0.6,
+  "alpha": 10,
   "beta": 0.1,
   "pheromone_evaporation_red": 0.001,
   "pheromone_evaporation_blue": 0.01,

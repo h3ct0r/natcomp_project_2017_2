@@ -35,5 +35,5 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config', required=False, type=str)
     opts = parser.parse_args()
 
-    #launch(opts.config)
-    launch("config/c1.json")
+    launch(opts.config)
+    #launch("config/e1_equilibrated.json")

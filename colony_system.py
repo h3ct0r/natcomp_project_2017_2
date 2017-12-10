@@ -81,8 +81,8 @@ class ColonySystem(object):
                 d["p_red"] = 0.0
 
             d["p_blue"] = ((1 - self.pheromone_evaporation_blue) * d["p_blue"]) + blue_p_value
-            if d["p_blue"] < 0.0:
-                d["p_blue"] = 0.0
+            if d["p_blue"] < 0.001:
+                d["p_blue"] = 0.001
 
         self.pheromone_dict_red.clear()
         self.pheromone_dict_blue.clear()
